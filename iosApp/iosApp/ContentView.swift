@@ -94,6 +94,7 @@ final class RootComposeViewController: UIViewController {
         ])
         self.leadingConstraint = leadingConstraint
         self.trailingConstraint = trailingConstraint
+        #if NUVIO_IOS27_SDK
         if #available(iOS 27.1, *) {
             registerForTraitChanges(UITraitCollection.systemTraitsAffectingVerticalBarEdge) {
                 (controller: RootComposeViewController, _: UITraitCollection) in
@@ -106,6 +107,7 @@ final class RootComposeViewController: UIViewController {
                 })
             }
         }
+        #endif
         contentController.didMove(toParent: self)
     }
 
@@ -123,6 +125,7 @@ final class RootComposeViewController: UIViewController {
 
     private func updateFold() {
         guard let hinge else { return }
+        #if NUVIO_IOS27_SDK
         guard #available(iOS 27.1, *), isHalfOpen,
               let fold = view.reservedRegions(kind: .division).first(where: { $0.frame.width > $0.frame.height })
         else {
@@ -130,6 +133,10 @@ final class RootComposeViewController: UIViewController {
             return
         }
         hinge.update(top: Double(fold.frame.minY), bottom: Double(fold.frame.maxY))
+        #else
+        _ = isHalfOpen
+        hinge.clear()
+        #endif
     }
 
     private func updateVerticalBar() {
@@ -143,6 +150,9 @@ final class RootComposeViewController: UIViewController {
     }
 
     private var verticalBarInsets: NSDirectionalEdgeInsets {
+        #if !NUVIO_IOS27_SDK
+        return .zero
+        #else
         guard #available(iOS 27.1, *) else { return .zero }
         let insets = view.safeAreaInsets
         let isRightToLeft = view.effectiveUserInterfaceLayoutDirection == .rightToLeft
@@ -154,6 +164,7 @@ final class RootComposeViewController: UIViewController {
         default:
             return .zero
         }
+        #endif
     }
 
     override var childForHomeIndicatorAutoHidden: UIViewController? {
@@ -215,9 +226,11 @@ final class RootComposeViewController: UIViewController {
     }
 
     private func configureBackGestures(isVisible: Bool) {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             navigationController?.interactiveContentPopGestureRecognizer?.isEnabled = false
         }
+        #endif
         navigationController?.interactivePopGestureRecognizer?.isEnabled =
             isVisible ? !disablesInteractiveContentPopGesture : true
     }
@@ -1020,25 +1033,45 @@ private struct DetailDestinationView: View {
 
     @ViewBuilder
     var body: some View {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, *), !usesComposeNavigationHeader {
             content.navigationSubtitle(wrapper.route.subtitle ?? "")
         } else {
             content
         }
+        #else
+        content
+        #endif
     }
 }
 
 private extension View {
     @ViewBuilder
     func verticalBarDisabled(_ disabled: Bool) -> some View {
+        #if NUVIO_IOS27_SDK
         if #available(iOS 27.1, *), disabled {
             toolbarVerticalBehavior(.disabled)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
+    /// persistentSystemOverlays is iOS 16+; on iOS 15 the home indicator is handled
+    /// by the UIKit prefersHomeIndicatorAutoHidden overrides instead.
+    @ViewBuilder
+    func nuvioPersistentSystemOverlays(hidden: Bool) -> some View {
+        if #available(iOS 16.0, *) {
+            persistentSystemOverlays(hidden ? .hidden : .automatic)
         } else {
             self
         }
     }
 }
 
+#if compiler(>=6.2)
 @available(iOS 26.0, *)
 private struct NativeProfileItem: Identifiable, Equatable {
     let id: Int32
@@ -1308,6 +1341,7 @@ private struct NativeProfileSwitcherView: View {
         .onDisappear(perform: model.stopObserving)
     }
 }
+#endif
 
 @available(iOS 16.0, *)
 struct NativeNavContentView: View {
@@ -1318,9 +1352,11 @@ struct NativeNavContentView: View {
         guard UIDevice.current.userInterfaceIdiom == .phone else {
             return false
         }
+        #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             return true
         }
+        #endif
         return false
     }
 
@@ -1379,6 +1415,7 @@ struct NativeNavContentView: View {
         .tint(Color(uiColor: iconStore.accentColor))
     }
 
+    #if compiler(>=6.2)
     @available(iOS 26.0, *)
     private var nativeTabs: some View {
         TabView(selection: tabSelection) {
@@ -1451,17 +1488,22 @@ struct NativeNavContentView: View {
         .tint(Color(uiColor: iconStore.accentColor))
         .tabBarMinimizeBehavior(.automatic)
     }
+    #endif
 
     @ViewBuilder
     var body: some View {
         ZStack {
             Group {
                 if appCoordinator.isMainContentMounted {
+                    #if compiler(>=6.2)
                     if #available(iOS 26.0, *), usesNativeTabBar {
                         nativeTabs
                     } else {
                         legacyTabs
                     }
+                    #else
+                    legacyTabs
+                    #endif
                 } else {
                     Color(uiColor: nuvioBackgroundColor)
                         .ignoresSafeArea(.all)
@@ -1495,7 +1537,7 @@ struct ContentView: View {
                     .allowsHitTesting(systemUI.pictureInPictureMessage == nil)
             }
         }
-        .persistentSystemOverlays(systemUI.isPlayerImmersive ? .hidden : .automatic)
+        .nuvioPersistentSystemOverlays(hidden: systemUI.isPlayerImmersive)
         .statusBarHidden(systemUI.isPlayerImmersive)
         .overlay {
             if let message = systemUI.pictureInPictureMessage {
